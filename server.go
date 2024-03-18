@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -439,6 +440,13 @@ func (r *PostgresRepository) updateFilm(filmId int, updates map[string]string, a
 	}
 	return err
 }
+func initDB(db *pgx.Conn) {
+	query, err := ioutil.ReadFile("migrate.sql")
+	if err != nil {
+		log.Fatalf("unable to read file: %v", err)
+	}
+	db.Exec(context.Background(), string(query))
+}
 
 func main() {
 	err := godotenv.Load()
@@ -453,6 +461,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer conn.Close(context.Background())
+	initDB(conn)
 	postgresRepo := NewPostgresRepository(conn)
 	handler := NewHandlerController(postgresRepo)
 
