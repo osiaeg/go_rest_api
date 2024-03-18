@@ -1,1 +1,11 @@
-# go_rest_api
+# go_rest_apikat
+mux.HandleFunc("GET /actor", handler.getAllActors)
+	mux.HandleFunc("POST /actor", handler.createActor)
+	mux.HandleFunc("PUT /actor", handler.updateActor)
+	mux.HandleFunc("DELETE /actor/{id}", handler.deleteActor)
+	mux.HandleFunc("POST /film", handler.createFilm)
+	mux.HandleFunc("PUT /film", handler.updateFilm)
+	mux.HandleFunc("DELETE /film/{id}", handler.deleteFilm)
+	mux.HandleFunc("GET /films_sort_by/{field_name}/{order}", handler.getSortedFilms)
+	mux.HandleFunc("GET /films", handler.getFilms)
+	mux.HandleFunc("GET /search_film/by_film_name/{part_of_name}", handler.getFilmsByName)
