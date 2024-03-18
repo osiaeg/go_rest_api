@@ -67,6 +67,23 @@ func (h *HandlerController) createActor(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+func (h *HandlerController) createFilm(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("POST request.")
+	var f Film
+	err := json.NewDecoder(r.Body).Decode(&f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Println(f)
+	err = h.repo.createFilm(&f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
 func (h *HandlerController) updateActor(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("PUT request.")
 	var a Actor
@@ -101,7 +118,6 @@ func (h *HandlerController) getAllActors(w http.ResponseWriter, r *http.Request)
 	fmt.Println("GET request.")
 	w.Header().Set("Content-Type", "application/json")
 	actors := h.repo.getAllActors()
-	// filmsByActorId := h.repo.getFilmsByActorId()
 	var actorsWithFilm []ActorWithFilms
 	for _, actor := range actors {
 		var actorWithFilm ActorWithFilms
@@ -109,6 +125,7 @@ func (h *HandlerController) getAllActors(w http.ResponseWriter, r *http.Request)
 		actorWithFilm.Name = actor.Name
 		actorWithFilm.Sex = actor.Sex
 		actorWithFilm.Birthday = actor.Birthday
+		actorWithFilm.Films = h.repo.getFilmsByActorId(actor.Id)
 		actorsWithFilm = append(actorsWithFilm, actorWithFilm)
 	}
 	encoder := json.NewEncoder(w)
@@ -154,19 +171,74 @@ func (r *PostgresRepository) getAllActors() []Actor {
 	}
 	return actors
 }
-func (r *PostgresRepository) getFilmsByActorId() []Film {
+
+func (r *PostgresRepository) getFilmById(filmId int) Film {
+	row := r.db.QueryRow(context.Background(), "select * from public.film where film_id=$1", filmId)
+
+	var f Film
+	var releaseDate time.Time
+	err := row.Scan(&f.Id, &f.Name, &f.Description, &releaseDate, &f.Rating, &f.ActorList)
+	f.ReleaseDate = fmt.Sprintf("%d-%02d-%02d", releaseDate.Year(), releaseDate.Month(), releaseDate.Day())
+	if err != nil {
+		log.Fatal(err)
+	}
+	return f
+}
+
+func (r *PostgresRepository) getFilmsByActorId(actorId int) []Film {
+	rows, err := r.db.Query(context.Background(), "select film_id from public.actor_film where actor_id=$1", actorId)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	var filmsId []int
+	for rows.Next() {
+		var filmId int
+		err := rows.Scan(&filmId)
+		if err != nil {
+			log.Fatal(err)
+		}
+		filmsId = append(filmsId, filmId)
+	}
 	var films []Film
+	for _, film_id := range filmsId {
+		film := r.getFilmById(film_id)
+		films = append(films, film)
+	}
+
 	return films
 }
 
-func (r *PostgresRepository) updateActor(id int, updates map[string]string) error {
+func (r *PostgresRepository) createFilm(f *Film) error {
+	//  'Green card', 'asdjsd;f', '2017-03-20', 5, '{1, 2, 3}'
+	query := fmt.Sprintf("insert into public.film(film_name, film_description, film_release_date, film_rating, film_actor_list) values($1, $2, $3, $4, $5) RETURNING film_id;")
+	row := r.db.QueryRow(context.Background(), query, f.Name, f.Description, f.ReleaseDate, f.Rating, f.ActorList)
+	var film_id int
+	err := row.Scan(&film_id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, actor_id := range f.ActorList {
+		commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, film_id)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if commandTag.RowsAffected() != 1 {
+			log.Fatal(errors.New("Film->Actor not created"))
+		}
+	}
+	return err
+}
+
+func (r *PostgresRepository) updateActor(actorId int, updates map[string]string) error {
 	var parameters []string
 
 	for k, v := range updates {
 		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
 	}
 
-	query := fmt.Sprintf("UPDATE public.actor SET %s WHERE actor_id=%d;", strings.Join(parameters, ", "), id)
+	query := fmt.Sprintf("UPDATE public.actor SET %s WHERE actor_id=%d;", strings.Join(parameters, ", "), actorId)
 	commandTag, err := r.db.Exec(context.Background(), query)
 
 	if err != nil {
@@ -196,32 +268,12 @@ func main() {
 	postgresRepo := NewPostgresRepository(conn)
 	handler := NewHandlerController(postgresRepo)
 
-	// Insert Actor
-	//
-
-	// Insert Film
-	/*
-		insert into public.film(
-			film_name,
-			film_description,
-			film_release_date,
-			film_rating,
-			film_actor_list
-			)
-			values(
-			'Green card',
-			'asdjf;lakjsdl;kfjal;skdjflfjaskl;djf;laskdjf;kljasdkl;fjasd;f',
-			'2017-03-20',
-			5,
-			'{1, 2, 3}'
-		);
-	*/
-
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /actor", handler.getAllActors)
 	mux.HandleFunc("POST /actor", handler.createActor)
 	mux.HandleFunc("PUT /actor", handler.updateActor)
+	mux.HandleFunc("POST /film", handler.createFilm)
 
 	err = http.ListenAndServe(":8080", mux)
 	if errors.Is(err, http.ErrServerClosed) {
