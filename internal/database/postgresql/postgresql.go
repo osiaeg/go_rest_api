@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -241,4 +242,12 @@ func (r *PostgresRepository) UpdateFilm(filmId int, updates map[string]string, a
 		}
 	}
 	return err
+}
+
+func InitDB(db *pgx.Conn) {
+	query, err := ioutil.ReadFile("migrations/migrate.sql")
+	if err != nil {
+		log.Fatalf("unable to read file: %v", err)
+	}
+	db.Exec(context.Background(), string(query))
 }

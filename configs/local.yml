@@ -1,6 +1,6 @@
 server:
-  host: "127.0.0.1"
-  port: 9000
+  host: "localhost"
+  port: 8080
 db:
   url: "postgres://user:admin@localhost:54320/postgres"
 
