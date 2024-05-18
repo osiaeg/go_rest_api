@@ -4,28 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
+	"github.com/osiaeg/go_rest_api/internal/config"
+	"github.com/osiaeg/go_rest_api/internal/database/postgresql"
 	"github.com/osiaeg/go_rest_api/internal/models"
 )
 
-type PostgresRepository struct {
-	db *pgx.Conn
-}
-
 type HandlerController struct {
-	repo *PostgresRepository
+	repo *postgresql.PostgresRepository
 }
 
-func NewHandlerController(repo *PostgresRepository) *HandlerController {
+func NewHandlerController(repo *postgresql.PostgresRepository) *HandlerController {
 	return &HandlerController{repo: repo}
 }
 
@@ -37,7 +35,7 @@ func (h *HandlerController) createActor(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.repo.createActor(&a)
+	err = h.repo.CreateActor(&a)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	} else {
@@ -54,7 +52,7 @@ func (h *HandlerController) createFilm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println(f)
-	err = h.repo.createFilm(&f)
+	err = h.repo.CreateFilm(&f)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	} else {
@@ -85,7 +83,7 @@ func (h *HandlerController) updateActor(w http.ResponseWriter, r *http.Request) 
 	if a.Birthday != "" {
 		updates["actor_birthday"] = a.Birthday
 	}
-	err = h.repo.updateActor(a.Id, updates)
+	err = h.repo.UpdateActor(a.Id, updates)
 	if err != nil {
 		fmt.Println("alksdjfalksjdf")
 	}
@@ -126,7 +124,7 @@ func (h *HandlerController) updateFilm(w http.ResponseWriter, r *http.Request) {
 
 		updates["film_actor_list"] = fmt.Sprintf("{%s}", strings.Join(actors_id, ", "))
 	}
-	err = h.repo.updateFilm(f.Id, updates, f.ActorList)
+	err = h.repo.UpdateFilm(f.Id, updates, f.ActorList)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -136,7 +134,7 @@ func (h *HandlerController) updateFilm(w http.ResponseWriter, r *http.Request) {
 func (h *HandlerController) getAllActors(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("GET request.")
 	w.Header().Set("Content-Type", "application/json")
-	actors := h.repo.getAllActors()
+	actors := h.repo.GetAllActors()
 	var actorsWithFilm []models.ActorWithFilms
 	for _, actor := range actors {
 		var actorWithFilm models.ActorWithFilms
@@ -144,7 +142,7 @@ func (h *HandlerController) getAllActors(w http.ResponseWriter, r *http.Request)
 		actorWithFilm.Name = actor.Name
 		actorWithFilm.Sex = actor.Sex
 		actorWithFilm.Birthday = actor.Birthday
-		actorWithFilm.Films = h.repo.getFilmsByActorId(actor.Id)
+		actorWithFilm.Films = h.repo.GetFilmsByActorId(actor.Id)
 		actorsWithFilm = append(actorsWithFilm, actorWithFilm)
 	}
 	encoder := json.NewEncoder(w)
@@ -154,7 +152,7 @@ func (h *HandlerController) getAllActors(w http.ResponseWriter, r *http.Request)
 func (h *HandlerController) deleteActor(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("DELETE request.")
 	actor_id := r.PathValue("id")
-	err := h.repo.deleteActor(actor_id)
+	err := h.repo.DeleteActor(actor_id)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -162,7 +160,7 @@ func (h *HandlerController) deleteActor(w http.ResponseWriter, r *http.Request) 
 func (h *HandlerController) deleteFilm(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("DELETE request.")
 	film_id := r.PathValue("id")
-	err := h.repo.deleteFilm(film_id)
+	err := h.repo.DeleteFilm(film_id)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -174,249 +172,24 @@ func (h *HandlerController) getSortedFilms(w http.ResponseWriter, r *http.Reques
 	order := r.PathValue("order")
 
 	w.Header().Set("Content-Type", "application/json")
-	films := h.repo.getSortedFilms(field_name, order)
+	films := h.repo.GetSortedFilms(field_name, order)
 	json.NewEncoder(w).Encode(films)
 }
 
 func (h *HandlerController) getFilms(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("GET request.")
 	w.Header().Set("Content-Type", "application/json")
-	films := h.repo.getSortedFilms("film_rating", "desc")
+	films := h.repo.GetSortedFilms("film_rating", "desc")
 	json.NewEncoder(w).Encode(films)
 }
 func (h *HandlerController) getFilmsByName(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("GET request.")
 	w.Header().Set("Content-Type", "application/json")
 	part_of_name := r.PathValue("part_of_name")
-	films := h.repo.searchFilmByName(part_of_name)
+	films := h.repo.SearchFilmByName(part_of_name)
 	json.NewEncoder(w).Encode(films)
 }
 
-func NewPostgresRepository(db *pgx.Conn) *PostgresRepository {
-	return &PostgresRepository{db: db}
-}
-
-func (r *PostgresRepository) searchFilmByName(part_of_name string) []models.Film {
-	query := fmt.Sprintf("select * from public.film where film_name like '%%%s%%'", part_of_name)
-	rows, err := r.db.Query(context.Background(), query)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	var films []models.Film
-	for rows.Next() {
-		var f models.Film
-		var releaseDate time.Time
-		err := rows.Scan(&f.Id, &f.Name, &f.Description, &releaseDate, &f.Rating, &f.ActorList)
-		if err != nil {
-			log.Fatal(err)
-		}
-		f.ReleaseDate = fmt.Sprintf("%d-%02d-%02d", releaseDate.Year(), releaseDate.Month(), releaseDate.Day())
-		films = append(films, f)
-	}
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-	return films
-}
-
-func (r *PostgresRepository) deleteActor(actor_id string) error {
-	commandTag, err := r.db.Exec(context.Background(), "delete from public.actor where actor_id=$1", actor_id)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Actor is not deleted.")
-		return err
-	}
-	return err
-}
-
-func (r *PostgresRepository) deleteFilm(film_id string) error {
-	commandTag, err := r.db.Exec(context.Background(), "delete from public.film where film_id=$1", film_id)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Film is not deleted.")
-		return err
-	}
-	return err
-}
-
-func (r *PostgresRepository) createActor(m *models.Actor) error {
-	commandTag, err := r.db.Exec(context.Background(), "insert into public.actor(actor_name, actor_sex, actor_birthday) values($1, $2, $3);", m.Name, m.Sex, m.Birthday)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Actor is not create.")
-		return err
-	}
-	return err
-}
-
-func (r *PostgresRepository) getAllActors() []models.Actor {
-	rows, err := r.db.Query(context.Background(), "select * from public.actor")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	var actors []models.Actor
-	for rows.Next() {
-		var a models.Actor
-		var birthday time.Time
-		err := rows.Scan(&a.Id, &a.Name, &a.Sex, &birthday)
-		if err != nil {
-			log.Fatal(err)
-		}
-		a.Birthday = fmt.Sprintf("%d-%02d-%02d", birthday.Year(), birthday.Month(), birthday.Day())
-		actors = append(actors, a)
-	}
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-	return actors
-}
-
-func (r *PostgresRepository) getSortedFilms(field_name string, order string) []models.Film {
-	query := fmt.Sprintf("select * from public.film order by %s %s", field_name, order)
-	rows, err := r.db.Query(context.Background(), query)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	var films []models.Film
-	for rows.Next() {
-		var f models.Film
-		var releaseDate time.Time
-		err := rows.Scan(&f.Id, &f.Name, &f.Description, &releaseDate, &f.Rating, &f.ActorList)
-		if err != nil {
-			log.Fatal(err)
-		}
-		f.ReleaseDate = fmt.Sprintf("%d-%02d-%02d", releaseDate.Year(), releaseDate.Month(), releaseDate.Day())
-		films = append(films, f)
-	}
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-	return films
-}
-
-func (r *PostgresRepository) getFilmById(filmId int) models.Film {
-	row := r.db.QueryRow(context.Background(), "select * from public.film where film_id=$1", filmId)
-
-	var f models.Film
-	var releaseDate time.Time
-	err := row.Scan(&f.Id, &f.Name, &f.Description, &releaseDate, &f.Rating, &f.ActorList)
-	f.ReleaseDate = fmt.Sprintf("%d-%02d-%02d", releaseDate.Year(), releaseDate.Month(), releaseDate.Day())
-	if err != nil {
-		log.Fatal(err)
-	}
-	return f
-}
-
-func (r *PostgresRepository) getFilmsByActorId(actorId int) []models.Film {
-	rows, err := r.db.Query(context.Background(), "select film_id from public.actor_film where actor_id=$1", actorId)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	var filmsId []int
-	for rows.Next() {
-		var filmId int
-		err := rows.Scan(&filmId)
-		if err != nil {
-			log.Fatal(err)
-		}
-		filmsId = append(filmsId, filmId)
-	}
-	var films []models.Film
-	for _, film_id := range filmsId {
-		film := r.getFilmById(film_id)
-		films = append(films, film)
-	}
-
-	return films
-}
-
-func (r *PostgresRepository) createFilm(f *models.Film) error {
-	query := fmt.Sprintf("insert into public.film(film_name, film_description, film_release_date, film_rating, film_actor_list) values($1, $2, $3, $4, $5) RETURNING film_id;")
-	row := r.db.QueryRow(context.Background(), query, f.Name, f.Description, f.ReleaseDate, f.Rating, f.ActorList)
-	var film_id int
-	err := row.Scan(&film_id)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, actor_id := range f.ActorList {
-		commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, film_id)
-		if err != nil {
-			return err
-		}
-		if commandTag.RowsAffected() != 1 {
-			log.Fatal(errors.New("Film->Actor not created"))
-		}
-	}
-	return err
-}
-
-func (r *PostgresRepository) updateActor(actorId int, updates map[string]string) error {
-	var parameters []string
-
-	for k, v := range updates {
-		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
-	}
-
-	query := fmt.Sprintf("UPDATE public.actor SET %s WHERE actor_id=%d;", strings.Join(parameters, ", "), actorId)
-	commandTag, err := r.db.Exec(context.Background(), query)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Actor is not update.")
-		return err
-	}
-	return err
-}
-
-func (r *PostgresRepository) updateFilm(filmId int, updates map[string]string, actorList []int) error {
-	var parameters []string
-
-	for k, v := range updates {
-		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
-	}
-
-	query := fmt.Sprintf("UPDATE public.film SET %s WHERE film_id=%d;", strings.Join(parameters, ", "), filmId)
-	commandTag, err := r.db.Exec(context.Background(), query)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Film is not updated.")
-		return err
-	}
-	if len(actorList) > 0 {
-		for _, actor_id := range actorList {
-			commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, filmId)
-			if err != nil {
-				return err
-				log.Fatal(err)
-			}
-			if commandTag.RowsAffected() != 1 {
-				log.Fatal(errors.New("Film->Actor not created"))
-			}
-		}
-	}
-	return err
-}
 func initDB(db *pgx.Conn) {
 	query, err := ioutil.ReadFile("migrate.sql")
 	if err != nil {
@@ -426,20 +199,28 @@ func initDB(db *pgx.Conn) {
 }
 
 func main() {
+	var env string
+	flag.StringVar(&env, "env", "local", "The environment where the application will be launched.")
+
+	flag.Parse()
+	fmt.Println(env)
+
+	cfg := config.Parse(env)
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file.")
 	}
 
 	// urlExample := "postgres://user:admin@localhost:54320/postgres"
-	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	conn, err := pgx.Connect(context.Background(), cfg.Database.Url)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
 		os.Exit(1)
 	}
 	defer conn.Close(context.Background())
 	initDB(conn)
-	postgresRepo := NewPostgresRepository(conn)
+	postgresRepo := postgresql.NewPostgresRepository(conn)
 	handler := NewHandlerController(postgresRepo)
 
 	mux := http.NewServeMux()
