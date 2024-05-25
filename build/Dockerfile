@@ -1,13 +1,15 @@
-
 FROM golang:1.22.1
 
 # Set destination for COPY
 WORKDIR /app
 
 # Download Go modules
-COPY go.mod go.sum ./
-COPY .env ./
-COPY migrate.sql ./
+COPY go.sum go.mod ./
+COPY api/ api/
+COPY internal/ internal/
+COPY cmd/ cmd/
+COPY ../configs/docker.yml configs/
+COPY ../migrations/migrate.sql migrations/
 RUN go mod download
 
 # Copy the source code. Note the slash at the end, as explained in
@@ -15,7 +17,7 @@ RUN go mod download
 COPY *.go ./
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build
+RUN CGO_ENABLED=0 GOOS=linux go build -o rest_api ./cmd/rest_api/main.go
 
 # Optional:
 # To bind to a TCP port, runtime parameters must be supplied to the docker command.

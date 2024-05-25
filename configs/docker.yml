@@ -1,5 +1,5 @@
 server:
   host: 127.0.0.1
-  port: 9000
+  port: 8080
 db:
   url: "postgres://user:admin@local_pgdb:5432/postgres"

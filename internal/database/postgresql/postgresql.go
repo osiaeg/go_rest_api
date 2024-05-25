@@ -25,7 +25,8 @@ func NewPostgresRepository(db *pgx.Conn) *PostgresRepository {
 func (r *PostgresRepository) CreateActor(m *models.Actor) error {
 	commandTag, err := r.db.Exec(context.Background(), "insert into public.actor(actor_name, actor_sex, actor_birthday) values($1, $2, $3);", m.Name, m.Sex, m.Birthday)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
+		// fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
+		return err
 	}
 	if commandTag.RowsAffected() != 1 {
 		err := errors.New("Actor is not create.")

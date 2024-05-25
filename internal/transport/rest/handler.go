@@ -12,6 +12,10 @@ import (
 	"github.com/osiaeg/go_rest_api/internal/models"
 )
 
+type Response struct {
+	message string `json:'message'`
+}
+
 type HandlerController struct {
 	repo *postgresql.PostgresRepository
 }
@@ -21,18 +25,27 @@ func NewHandlerController(repo *postgresql.PostgresRepository) *HandlerControlle
 }
 
 func (h *HandlerController) CreateActor(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("POST request.")
+	log.Println("POST request /actor")
+	encoder := json.NewEncoder(w)
+
 	var a models.Actor
 	err := json.NewDecoder(r.Body).Decode(&a)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Println("Error parse input data.")
 		return
 	}
+
 	err = h.repo.CreateActor(&a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Error while creating actor in databse.", http.StatusBadRequest)
+		log.Println(err.Error())
 	} else {
 		w.WriteHeader(http.StatusCreated)
+		encoder.Encode(Response{
+			message: "Actor is created.",
+		})
+		log.Println("Actor is created.")
 	}
 }
 

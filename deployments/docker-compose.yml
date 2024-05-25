@@ -3,10 +3,12 @@ services:
   server:
     image: go_app
     container_name: rest_api_server
-    build: ./
-    command: ./rest_api
+    build: 
+      context: ../
+      dockerfile: build/Dockerfile
+    command: ./rest_api -env docker
     ports:
-      - 8080:8080
+      - "8080:8080"
     depends_on:
       - db
 
