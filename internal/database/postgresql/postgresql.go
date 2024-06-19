@@ -7,10 +7,12 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/osiaeg/go_rest_api/internal/models"
 )
 
@@ -146,6 +148,125 @@ func (r *PostgresRepository) GetFilmById(filmId int) models.Film {
 	return f
 }
 
+func (r *PostgresRepository) CreateFilm(f *models.Film) error {
+	query := fmt.Sprintf("insert into public.film(film_name, film_description, film_release_date, film_rating, film_actor_list) values($1, $2, $3, $4, $5) RETURNING film_id;")
+	row := r.db.QueryRow(context.Background(), query, f.Name, f.Description, f.ReleaseDate, f.Rating, f.ActorList)
+	var film_id int
+	err := row.Scan(&film_id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, actor_id := range f.ActorList {
+		commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, film_id)
+		if err != nil {
+			return err
+		}
+		if commandTag.RowsAffected() != 1 {
+			log.Fatal(errors.New("Film->Actor not created"))
+		}
+	}
+	return err
+}
+
+func prepareUpdateParameters(updates map[string]string) []string {
+	var parameters []string
+
+	for k, v := range updates {
+		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
+	}
+
+	return parameters
+}
+
+func (r *PostgresRepository) UpdateActor(actorId int, updates map[string]string) error {
+	parameters := prepareUpdateParameters(updates)
+
+	query := fmt.Sprintf("UPDATE public.actor SET %s WHERE actor_id=%d;", strings.Join(parameters, ", "), actorId)
+	commandTag, err := r.db.Exec(context.Background(), query)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
+	}
+
+	if commandTag.RowsAffected() != 1 {
+		err := errors.New("Actor is not update.")
+		return err
+	}
+	return err
+}
+
+func (r *PostgresRepository) createActorToFilm(aId, fId int) error {
+	commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", aId, fId)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23503" {
+				log.Println("Get ForeignKeyViolation error")
+				return errors.New(fmt.Sprintf("Actor with actor_id=%d not found.", aId))
+			}
+		}
+		return err
+	}
+
+	if commandTag.RowsAffected() != 1 {
+		log.Println("Film->Actor not created")
+		return errors.New("Film->Actor not created")
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateFilm(filmId int, updates map[string]string, actorList []int) error {
+	var actrosIdOld []int
+	if len(actorList) > 0 {
+		actrosIdOld = r.GetActorIdByFilmId(filmId)
+		var matchIndexes []int
+		for _, actor_id := range actorList {
+
+			if slices.Contains(actrosIdOld, actor_id) {
+				matchIndexes = append(matchIndexes, slices.Index(actrosIdOld, actor_id))
+				continue
+			}
+
+			err := r.createActorToFilm(actor_id, filmId)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+
+		}
+		for index, value := range actrosIdOld {
+			if slices.Contains(matchIndexes, index) {
+				continue
+			}
+
+			// Delete unused row in public.actor_film
+			query := fmt.Sprintf("DELETE FROM public.actor_film WHERE actor_id=%d and film_id=%d", value, filmId)
+			commandTag, err := r.db.Exec(context.Background(), query)
+			if err != nil {
+				log.Println("Error when exec")
+			}
+			if commandTag.RowsAffected() != 1 {
+				return errors.New("Film->Actor not deleted.")
+			}
+			// Delete unused row in public.actor_film
+		}
+	}
+	// Update row in public.film
+	parameters := prepareUpdateParameters(updates)
+	query := fmt.Sprintf("UPDATE public.film SET %s WHERE film_id=%d;", strings.Join(parameters, ", "), filmId)
+	commandTag, err := r.db.Exec(context.Background(), query)
+	if err != nil {
+		log.Println("Error when exec")
+	}
+
+	if commandTag.RowsAffected() != 1 {
+		err := errors.New("Film is not updated.")
+		return err
+	}
+	// Update row in public.film
+	return err
+}
+
 func (r *PostgresRepository) GetFilmsByActorId(actorId int) []models.Film {
 	rows, err := r.db.Query(context.Background(), "select film_id from public.actor_film where actor_id=$1", actorId)
 	if err != nil {
@@ -171,82 +292,28 @@ func (r *PostgresRepository) GetFilmsByActorId(actorId int) []models.Film {
 	return films
 }
 
-func (r *PostgresRepository) CreateFilm(f *models.Film) error {
-	query := fmt.Sprintf("insert into public.film(film_name, film_description, film_release_date, film_rating, film_actor_list) values($1, $2, $3, $4, $5) RETURNING film_id;")
-	row := r.db.QueryRow(context.Background(), query, f.Name, f.Description, f.ReleaseDate, f.Rating, f.ActorList)
-	var film_id int
-	err := row.Scan(&film_id)
+func (r *PostgresRepository) GetActorIdByFilmId(filmId int) []int {
+	rows, err := r.db.Query(context.Background(), "select actor_id from public.actor_film where film_id=$1", filmId)
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, actor_id := range f.ActorList {
-		commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, film_id)
+	defer rows.Close()
+
+	var actorsId []int
+	for rows.Next() {
+		var actorId int
+		err := rows.Scan(&actorId)
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
-		if commandTag.RowsAffected() != 1 {
-			log.Fatal(errors.New("Film->Actor not created"))
-		}
-	}
-	return err
-}
-
-func (r *PostgresRepository) UpdateActor(actorId int, updates map[string]string) error {
-	var parameters []string
-
-	for k, v := range updates {
-		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
+		actorsId = append(actorsId, actorId)
 	}
 
-	query := fmt.Sprintf("UPDATE public.actor SET %s WHERE actor_id=%d;", strings.Join(parameters, ", "), actorId)
-	commandTag, err := r.db.Exec(context.Background(), query)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Actor is not update.")
-		return err
-	}
-	return err
-}
-
-func (r *PostgresRepository) UpdateFilm(filmId int, updates map[string]string, actorList []int) error {
-	var parameters []string
-
-	for k, v := range updates {
-		parameters = append(parameters, fmt.Sprintf("%s='%s'", k, v))
-	}
-
-	query := fmt.Sprintf("UPDATE public.film SET %s WHERE film_id=%d;", strings.Join(parameters, ", "), filmId)
-	commandTag, err := r.db.Exec(context.Background(), query)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		err := errors.New("Film is not updated.")
-		return err
-	}
-	if len(actorList) > 0 {
-		for _, actor_id := range actorList {
-			commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, filmId)
-			if err != nil {
-				return err
-				log.Fatal(err)
-			}
-			if commandTag.RowsAffected() != 1 {
-				log.Fatal(errors.New("Film->Actor not created"))
-			}
-		}
-	}
-	return err
+	return actorsId
 }
 
 func InitDB(db *pgx.Conn) {
-	query, err := ioutil.ReadFile("migrations/migrate.sql")
+	query, err := ioutil.ReadFile("../../migrations/migrate.sql")
 	if err != nil {
 		log.Fatalf("unable to read file: %v", err)
 	}

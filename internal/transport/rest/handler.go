@@ -6,18 +6,34 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/osiaeg/go_rest_api/internal/database/postgresql"
 	"github.com/osiaeg/go_rest_api/internal/models"
 )
 
-type Response struct {
-	message string `json:'message'`
-}
+// type Response struct {
+// 	message string `json:'message'`
+// }
+
+type Response map[string]interface{}
 
 type HandlerController struct {
 	repo *postgresql.PostgresRepository
+}
+
+func sendResponse(w http.ResponseWriter, code int, msg string) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	err := json.NewEncoder(w).Encode(Response{
+		"message": msg,
+	})
+	if err != nil {
+		return err
+	}
+	log.Println(msg)
+	return nil
 }
 
 func NewHandlerController(repo *postgresql.PostgresRepository) *HandlerController {
@@ -25,13 +41,12 @@ func NewHandlerController(repo *postgresql.PostgresRepository) *HandlerControlle
 }
 
 func (h *HandlerController) CreateActor(w http.ResponseWriter, r *http.Request) {
-	log.Println("POST request /actor")
-	encoder := json.NewEncoder(w)
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 
 	var a models.Actor
 	err := json.NewDecoder(r.Body).Decode(&a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Println("Error parse input data.")
 		return
 	}
@@ -40,38 +55,43 @@ func (h *HandlerController) CreateActor(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		http.Error(w, "Error while creating actor in databse.", http.StatusBadRequest)
 		log.Println(err.Error())
-	} else {
-		w.WriteHeader(http.StatusCreated)
-		encoder.Encode(Response{
-			message: "Actor is created.",
-		})
-		log.Println("Actor is created.")
+		return
+	}
+
+	if err := sendResponse(w, http.StatusCreated, "Actor is created."); err != nil {
+		log.Println(err)
 	}
 }
 
 func (h *HandlerController) CreateFilm(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("POST request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	var f models.Film
 	err := json.NewDecoder(r.Body).Decode(&f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println("Error parse input data.")
+		return
+	}
+	err = h.repo.CreateFilm(&f)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	fmt.Println(f)
-	err = h.repo.CreateFilm(&f)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	} else {
-		w.WriteHeader(http.StatusCreated)
+
+	if err := sendResponse(w, http.StatusCreated, "Film is created."); err != nil {
+		log.Println(err)
 	}
 }
 
 func (h *HandlerController) UpdateActor(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("PUT request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	var a models.Actor
 	err := json.NewDecoder(r.Body).Decode(&a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := sendResponse(w, http.StatusInternalServerError, err.Error()); err != nil {
+			log.Println(err.Error())
+			return
+		}
 		return
 	}
 	updates := make(map[string]string)
@@ -89,18 +109,30 @@ func (h *HandlerController) UpdateActor(w http.ResponseWriter, r *http.Request) 
 	if a.Birthday != "" {
 		updates["actor_birthday"] = a.Birthday
 	}
+
 	err = h.repo.UpdateActor(a.Id, updates)
 	if err != nil {
-		fmt.Println("alksdjfalksjdf")
+		msg := fmt.Sprintf("Actor with id=%d not found.", a.Id)
+		if err := sendResponse(w, http.StatusBadRequest, msg); err != nil {
+			log.Println("Error update actor")
+			return
+		}
+		return
+	}
+
+	msg := fmt.Sprintf("Actor with id=%d updated.", a.Id)
+	if err := sendResponse(w, http.StatusOK, msg); err != nil {
+		log.Println("Error update actor")
 	}
 }
+
 func (h *HandlerController) UpdateFilm(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("PUT request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	var f models.Film
 	f.Rating = -1
 	err := json.NewDecoder(r.Body).Decode(&f)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	updates := make(map[string]string)
@@ -132,13 +164,19 @@ func (h *HandlerController) UpdateFilm(w http.ResponseWriter, r *http.Request) {
 	}
 	err = h.repo.UpdateFilm(f.Id, updates, f.ActorList)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Println("Error update in databse.")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	msg := fmt.Sprintf("Film with id=%d updated.", f.Id)
+	if err := sendResponse(w, http.StatusOK, msg); err != nil {
+		log.Println("Error update film")
 	}
 }
 
 func (h *HandlerController) GetAllActors(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("GET request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	w.Header().Set("Content-Type", "application/json")
 	actors := h.repo.GetAllActors()
 	var actorsWithFilm []models.ActorWithFilms
@@ -156,13 +194,29 @@ func (h *HandlerController) GetAllActors(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HandlerController) DeleteActor(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("DELETE request.")
-	actor_id := r.PathValue("id")
-	err := h.repo.DeleteActor(actor_id)
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
+	actor_id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		log.Fatal(err)
+		if err := sendResponse(w, http.StatusBadRequest, "id must be integer."); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+	err = h.repo.DeleteActor(strconv.Itoa(actor_id))
+	if err != nil {
+		ans := fmt.Sprintf("Actor with id=%d not found.", actor_id)
+		if err := sendResponse(w, http.StatusNotFound, ans); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	ans := fmt.Sprintf("Actor with id=%d was deleted.", actor_id)
+	if err := sendResponse(w, http.StatusOK, ans); err != nil {
+		log.Println(err)
 	}
 }
+
 func (h *HandlerController) DeleteFilm(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("DELETE request.")
 	film_id := r.PathValue("id")
@@ -188,6 +242,7 @@ func (h *HandlerController) GetFilms(w http.ResponseWriter, r *http.Request) {
 	films := h.repo.GetSortedFilms("film_rating", "desc")
 	json.NewEncoder(w).Encode(films)
 }
+
 func (h *HandlerController) GetFilmsByName(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("GET request.")
 	w.Header().Set("Content-Type", "application/json")

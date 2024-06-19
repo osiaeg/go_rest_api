@@ -22,7 +22,9 @@ func Parse(env string) *Config {
 	var path string
 
 	if env == "local" {
-		path = "configs/local.yml"
+		path = "../../configs/local.yml"
+		// path = "configs/local.yml"
+
 	} else if env == "docker" {
 		path = "configs/docker.yml"
 	}
