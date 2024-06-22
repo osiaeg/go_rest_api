@@ -212,19 +212,30 @@ func (h *HandlerController) DeleteActor(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ans := fmt.Sprintf("Actor with id=%d was deleted.", actor_id)
-	if err := sendResponse(w, http.StatusNoContent, ans); err != nil {
-		log.Println(err)
-	}
+	w.WriteHeader(http.StatusNoContent)
+	log.Println(ans)
 }
 
 func (h *HandlerController) DeleteFilm(w http.ResponseWriter, r *http.Request) {
 	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
-	film_id := r.PathValue("id")
-	//TODO: if film_id not found drop error. Should send 404 not found.
-	err := h.repo.DeleteFilm(film_id)
+	film_id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		log.Fatal(err)
+		if err := sendResponse(w, http.StatusBadRequest, "id must be integer."); err != nil {
+			log.Println(err)
+		}
+		return
 	}
+	err = h.repo.DeleteFilm(strconv.Itoa(film_id))
+	if err != nil {
+		ans := fmt.Sprintf("Film with id=%d not found.", film_id)
+		if err := sendResponse(w, http.StatusNotFound, ans); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+	ans := fmt.Sprintf("Film with id=%d was deleted.", film_id)
+	w.WriteHeader(http.StatusNoContent)
+	log.Println(ans)
 }
 
 func (h *HandlerController) GetSortedFilms(w http.ResponseWriter, r *http.Request) {

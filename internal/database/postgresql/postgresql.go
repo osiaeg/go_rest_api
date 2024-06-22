@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,7 +63,39 @@ func (r *PostgresRepository) SearchFilmByName(part_of_name string) []models.Film
 	return films
 }
 
+func remove[T comparable](l []T, item T) []T {
+	for i, other := range l {
+		if other == item {
+			return append(l[:i], l[i+1:]...)
+		}
+	}
+	return l
+}
+
 func (r *PostgresRepository) DeleteActor(actor_id string) error {
+	actor_id_int, err := strconv.Atoi(actor_id)
+	if err != nil {
+		log.Println("Actor id must be integer")
+	}
+
+	films := r.GetFilmsByActorId(actor_id_int)
+	for _, film := range films {
+		newActorList := remove(film.ActorList, actor_id_int)
+
+		updates := make(map[string]string)
+		var actors_id []string
+
+		for _, actor_id := range newActorList {
+			actors_id = append(actors_id, fmt.Sprintf("%d", actor_id))
+		}
+
+		updates["film_actor_list"] = fmt.Sprintf("{%s}", strings.Join(actors_id, ", "))
+
+		err := r.UpdateFilm(film.Id, updates, newActorList)
+		if err != nil {
+			log.Println("105 error film not updated.")
+		}
+	}
 	commandTag, err := r.db.Exec(context.Background(), "delete from public.actor where actor_id=$1", actor_id)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aaksdjf %v\n", err)
@@ -71,8 +104,7 @@ func (r *PostgresRepository) DeleteActor(actor_id string) error {
 		err := errors.New("Actor is not deleted.")
 		return err
 	}
-	//TODO: delete actor_id from film actor_list with this id
-	return err
+	return nil
 }
 
 func (r *PostgresRepository) DeleteFilm(film_id string) error {
@@ -159,12 +191,11 @@ func (r *PostgresRepository) CreateFilm(f *models.Film) error {
 		log.Fatal(err)
 	}
 	for _, actor_id := range f.ActorList {
-		commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", actor_id, film_id)
+		err := r.createActorToFilm(actor_id, film_id)
 		if err != nil {
+			r.DeleteFilm(strconv.Itoa(film_id))
+			log.Println(err)
 			return err
-		}
-		if commandTag.RowsAffected() != 1 {
-			log.Fatal(errors.New("Film->Actor not created"))
 		}
 	}
 	return err
