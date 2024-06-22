@@ -71,6 +71,7 @@ func (r *PostgresRepository) DeleteActor(actor_id string) error {
 		err := errors.New("Actor is not deleted.")
 		return err
 	}
+	//TODO: delete actor_id from film actor_list with this id
 	return err
 }
 
@@ -148,6 +149,7 @@ func (r *PostgresRepository) GetFilmById(filmId int) models.Film {
 	return f
 }
 
+// TODO: use transaction, because if actor_id not found, film was created, but actor_film link not created.
 func (r *PostgresRepository) CreateFilm(f *models.Film) error {
 	query := fmt.Sprintf("insert into public.film(film_name, film_description, film_release_date, film_rating, film_actor_list) values($1, $2, $3, $4, $5) RETURNING film_id;")
 	row := r.db.QueryRow(context.Background(), query, f.Name, f.Description, f.ReleaseDate, f.Rating, f.ActorList)
@@ -196,7 +198,8 @@ func (r *PostgresRepository) UpdateActor(actorId int, updates map[string]string)
 }
 
 func (r *PostgresRepository) createActorToFilm(aId, fId int) error {
-	commandTag, err := r.db.Exec(context.Background(), "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);", aId, fId)
+	query := "INSERT INTO public.actor_film(actor_id, film_id) VALUES ($1, $2);"
+	commandTag, err := r.db.Exec(context.Background(), query, aId, fId)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
@@ -215,40 +218,46 @@ func (r *PostgresRepository) createActorToFilm(aId, fId int) error {
 	return nil
 }
 
+func (r *PostgresRepository) deleteActorToFilm(aId, fId int) error {
+	query := fmt.Sprintf("DELETE FROM public.actor_film WHERE actor_id=%d and film_id=%d", aId, fId)
+	commandTag, err := r.db.Exec(context.Background(), query)
+	if err != nil {
+		log.Println("Error when exec delete.")
+		return err
+	}
+	if commandTag.RowsAffected() != 1 {
+		return errors.New("Film->Actor not deleted.")
+	}
+	return nil
+}
+
 func (r *PostgresRepository) UpdateFilm(filmId int, updates map[string]string, actorList []int) error {
 	var actrosIdOld []int
-	if len(actorList) > 0 {
-		actrosIdOld = r.GetActorIdByFilmId(filmId)
-		var matchIndexes []int
-		for _, actor_id := range actorList {
+	actrosIdOld = r.GetActorIdByFilmId(filmId)
+	var matchIndexes []int
+	for _, actor_id := range actorList {
 
-			if slices.Contains(actrosIdOld, actor_id) {
-				matchIndexes = append(matchIndexes, slices.Index(actrosIdOld, actor_id))
-				continue
-			}
-
-			err := r.createActorToFilm(actor_id, filmId)
-			if err != nil {
-				log.Println(err)
-				return err
-			}
-
+		if slices.Contains(actrosIdOld, actor_id) {
+			matchIndexes = append(matchIndexes, slices.Index(actrosIdOld, actor_id))
+			continue
 		}
-		for index, value := range actrosIdOld {
-			if slices.Contains(matchIndexes, index) {
-				continue
-			}
 
-			// Delete unused row in public.actor_film
-			query := fmt.Sprintf("DELETE FROM public.actor_film WHERE actor_id=%d and film_id=%d", value, filmId)
-			commandTag, err := r.db.Exec(context.Background(), query)
-			if err != nil {
-				log.Println("Error when exec")
-			}
-			if commandTag.RowsAffected() != 1 {
-				return errors.New("Film->Actor not deleted.")
-			}
-			// Delete unused row in public.actor_film
+		err := r.createActorToFilm(actor_id, filmId)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+
+	}
+	for index, value := range actrosIdOld {
+		if slices.Contains(matchIndexes, index) {
+			continue
+		}
+
+		err := r.deleteActorToFilm(value, filmId)
+		if err != nil {
+			log.Println(err)
+			return err
 		}
 	}
 	// Update row in public.film

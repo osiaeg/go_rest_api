@@ -212,14 +212,15 @@ func (h *HandlerController) DeleteActor(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ans := fmt.Sprintf("Actor with id=%d was deleted.", actor_id)
-	if err := sendResponse(w, http.StatusOK, ans); err != nil {
+	if err := sendResponse(w, http.StatusNoContent, ans); err != nil {
 		log.Println(err)
 	}
 }
 
 func (h *HandlerController) DeleteFilm(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("DELETE request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	film_id := r.PathValue("id")
+	//TODO: if film_id not found drop error. Should send 404 not found.
 	err := h.repo.DeleteFilm(film_id)
 	if err != nil {
 		log.Fatal(err)
@@ -227,7 +228,7 @@ func (h *HandlerController) DeleteFilm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HandlerController) GetSortedFilms(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("GET request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	field_name := r.PathValue("field_name")
 	order := r.PathValue("order")
 
@@ -237,7 +238,7 @@ func (h *HandlerController) GetSortedFilms(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HandlerController) GetFilms(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("GET request.")
+	log.Println(fmt.Sprintf("%s request %s", r.Method, r.URL.Path))
 	w.Header().Set("Content-Type", "application/json")
 	films := h.repo.GetSortedFilms("film_rating", "desc")
 	json.NewEncoder(w).Encode(films)
