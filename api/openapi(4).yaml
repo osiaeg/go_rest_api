@@ -1,0 +1,547 @@
+openapi: 3.0.3
+info:
+  title: Go rest api
+  version: 0.0.1
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: actors
+    description: Everything about actors
+  - name: films
+    description: Everything about films
+paths:
+  /actors:
+    get:
+      # security:
+      #   - basicAuth: [] 
+      tags:
+        - actors
+      summary: Get all actors with film list
+      description: Return all actors
+      operationId: getAllActors
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            "application/json":
+              schema:
+                type: array
+                items: 
+                  $ref: "#/components/schemas/Actor"
+        # '403':
+        #   description: User unauthorized
+        #   content:
+        #     "application/json":
+        #       schema:
+        #         $ref: "#/components/schemas/Error"
+    post:
+      security:
+      - basicAuth: []
+      tags:
+      - actors
+      requestBody:
+        description: Create a new pet in the store
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActorWithoutId'
+        required: true
+      summary: Create new actor
+      description: Create new actor
+      operationId: createActor
+      responses:
+        '201':
+          description: Actor successfuly created.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Actor"
+              example:
+                actor_id: 1
+                actor_name: Shelock Holms
+                actor_sex: 'M'
+                actor_birthday: '2017-03-14'
+        '400':
+          description: Bad request
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 400
+                msg: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+  /actors/{actor_id}:
+    delete:
+      security:
+        - basicAuth: [] 
+      tags:
+        - actors
+      summary: Delete actor by ID
+      description: Returns a single pet
+      operationId: deleteActor
+      parameters:
+        - name: actor_id
+          in: path
+          description: ID of actor to delete
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Actor successfuly deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Actor id not found.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 404
+                msg: Actor not found.
+    get:
+      # security:
+      #   - basicAuth: []
+      tags:
+      - actors
+      summary: Get actor by ID
+      description: Retrun a single actor
+      operationId: getActor
+      parameters:
+        - name: actor_id
+          in: path
+          description: ID of actor to delete
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Actor"
+        # '403':
+        #   description: User unauthorized
+        #   content:
+        #     "application/json":
+        #       schema:
+        #         $ref: "#/components/schemas/Error"
+        '404':
+          description: Actor id not found.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 404
+                msg: Actor not found.
+    put:
+      security:
+        - basicAuth: []
+      tags:
+      - actors
+      parameters:
+        - name: actor_id
+          in: path
+          description: ID of actor to delete
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Create a new pet in the store
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActorWithoutId'
+        required: true
+      summary: Update actor information by ID
+      description: Update actor information where id = actor_id
+      operationId: updateActor  
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Actor'
+              example:
+                actor_id: 1
+                actor_name: Daniel Jacob Radcliffe
+                actor_sex: 'M'
+                actor_birthday: '2017-03-14'
+        '400':
+          description: Bad request
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 400
+                msg: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Actor id not found.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 404
+                msg: Actor not found.
+  /films:
+    get:
+      tags:
+        - films
+      summary: Get all film 
+      description: Get all film. Default sort is by film_rating по убыванию
+      operationId: getAllFilms
+      parameters:
+        - name: sort
+          in: query
+          # required: true
+          schema:
+            type: string
+            example: -film_rating
+          description: Сортировка фильмов по полям (+ это по возрастанию, - это по убыванию)
+        - name: search
+          in: query
+          schema:
+            type: object
+            properties:
+              key:
+                type: string
+                example: actor_name or film_name
+              value:
+                type: string
+                example: The Green Mile
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            "application/json":
+              schema:
+                type: array
+                items: 
+                  $ref: "#/components/schemas/Film"
+        '400':
+          description: Bad request
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 400
+                msg: Bad Request
+        '422':
+          description: Validation exception
+    post:
+      tags:
+        - films
+      security:
+        - basicAuth: []
+      summary: Add a new film
+      description: Add a new film
+      operationId: addFilm
+      requestBody:
+        description: Create a new pet in the store
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilmWithoutId'
+        required: true
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Film"
+        '400':
+          description: Bad request
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 400
+                msg: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+  /films/{film_id}:
+    delete:
+      tags:
+        - films
+      security:
+        - basicAuth: []
+      summary: Delete Film by ID
+      description: None
+      operationId: deleteFilmById
+      parameters:
+        - name: film_id
+          in: path
+          description: ID of film to delete
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Film successfuly deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Actor id not found.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 404
+                msg: Actor not found.
+    put:
+      tags:
+        - films
+      security:
+        - basicAuth: []
+      summary: Update an existing film
+      description: Update an existing film by Id
+      operationId: updateFilm
+      parameters:
+        - name: film_id
+          in: path
+          description: ID of film to delete
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Update an existent film in the store
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilmWithoutId'
+        required: true
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Film"
+        '400':
+          description: Bad request
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 400
+                msg: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 401
+                msg: Unauthorized
+        '403':
+          description: User unauthorized
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Actor id not found.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: 404
+                msg: Actor not found.
+components:
+  securitySchemes:
+      basicAuth:
+        type: http
+        scheme: basic
+          
+  schemas:
+    Film:
+      required:
+        - film_id
+        - film_name
+        - film_description
+        - film_release_date
+        - film_rating
+      type: object
+      properties:
+        film_id:
+          type: integer
+          example: 10
+        film_name:
+          type: string
+          example: The Green Mile
+        film_description:
+          type: string
+          example: >-
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+            eiusmod tempor incididunt ut labore et dolore magna aliqua.
+        film_release_date:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$
+          example: '2017-03-14'
+        film_rating:
+          type: integer
+          example: 5
+    FilmWithoutId:
+      required:
+        - film_id
+        - film_name
+        - film_description
+        - film_release_date
+        - film_rating
+      type: object
+      properties:
+        film_name:
+          type: string
+          example: The Green Mile
+        film_description:
+          type: string
+          example: >-
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+            eiusmod tempor incididunt ut labore et dolore magna aliqua.
+        film_release_date:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$
+          example: '2017-03-14'
+        film_rating:
+          type: integer
+          example: 5
+    Actor:
+      required:
+        - actor_id
+        - actor_name
+        - actor_sex
+        - actor_birthday
+      type: object
+      properties:
+        actor_id:
+          type: integer
+          example: 10
+        actor_name:
+          type: string
+          example: Daniel Jacob Radcliffe
+        actor_sex:
+          enum:
+            - "FEMALE"
+            - "MALE"
+        actor_birthday:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$
+          example: '2017-03-14'
+        actor_films:
+          type: array
+          items:
+            $ref: '#/components/schemas/Film'
+    ActorWithoutId:
+      required:
+        - actor_name
+        - actor_sex
+        - actor_birthday
+      type: object
+      properties:
+        actor_name:
+          type: string
+          example: Daniel Jacob Radcliffe
+        actor_sex:
+          enum:
+            - "FEMALE"
+            - "MALE"
+        actor_birthday:
+          type: string
+          pattern: ^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$
+          example: '2017-03-14'
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 403
+        msg:
+          type: string
+          example: unauthorized
